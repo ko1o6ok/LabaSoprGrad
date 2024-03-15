@@ -2,6 +2,9 @@
 #include <cmath>
 #include <vector>
 # define M_PI           3.14159265358979323846
+#include <chrono>
+//#include <queue>
+using namespace std::chrono;
 using namespace std;
 
 
@@ -95,8 +98,8 @@ int main() {
     // Применение метода сопряжённых градиентов к решению
     // Задачи Дирихле для уравнения Пуассона
 
-    int n = 200; // Число разбиений по оси x
-    int m = 200; // Число разбиений по оси y
+    int n = 100; // Число разбиений по оси x
+    int m = 100; // Число разбиений по оси y
 
 
     double h = (b-a)/n; // Шаг по оси x
@@ -135,14 +138,16 @@ int main() {
     vector<double> y(m+1); // Ординаты узлов
 
     x[0] = a;
-    //#pragma omp parallel for default(none) shared(n,x,h)
+    #pragma omp parallel for default(none) shared(n,x,h,a)
     for (int i = 1; i <= n; ++i)
-        x[i] = x[i-1] + h;
+        x[i] = a + i*h;
+        //x[i] = x[i-1] + h;
 
     y[0] = c;
-    //#pragma omp parallel for default(none) shared(m,y,k)
+    #pragma omp parallel for default(none) shared(m,y,k,c)
     for (int j = 1; j <= m; ++j)
-        y[j] = y[j-1] + k;
+        y[j] = c + j*k;
+        //y[j] = y[j-1] + k;
     // Заполнение
     for(int j = 0;j<=m;j++){
         #pragma omp parallel for default(none) shared(n,v,j,h_s,r_s,real_sol,laplacian,x,y)
@@ -188,6 +193,7 @@ int main() {
 //    }
     cout << "\n-----------------------------------------"<<endl;
 
+    auto start = high_resolution_clock::now(); // Для замера времени
     while (true){
 
         if(S>= min(Nmax,system_size)){
@@ -217,16 +223,23 @@ int main() {
         // Проведём итерацию методом сопряжённых градиентов.
         // Начинаем с подсчёта текущей невязки
         // r_s = A x_s-F
-        //#pragma omp parallel for default(none) shared(m,n,r_s,a2,v,h2,k2,laplacian,current_norm)
-        for(int j = 1;j<m;j++){
-            double temp; // Вспомогательная сумма
-            for(int i = 1;i<n;i++){
+
+        // Идея: произведение v * h и v * k вычисляется два раза!
+        // Сохраним его значение при проходе
+
+        #pragma omp parallel for default(none) shared(m,n,r_s,a2,v,h2,k2,laplacian,current_norm)
+        for(int i = 1;i<n;i++){
+            //double temp; // Вспомогательная сумма
+            double vert1,vert2;
+            //std::
+            for(int j = 1;j<m;j++){
                 // Проходимся по вектору v
                 // Разреженность помогает!
+                
                 r_s[i][j] = -a2 * v[i][j]-h2*(v[i+1][j]+v[i-1][j])-k2*(v[i][j+1]+v[i][j-1])+ laplacian[i][j];
-                temp = abs(r_s[i][j]);
-                if(temp >current_norm)
-                    current_norm = temp;
+
+                if(abs(r_s[i][j]) >current_norm)
+                    current_norm = abs(r_s[i][j]);
             }
         }
 
@@ -235,7 +248,7 @@ int main() {
             // Вспомогательные суммы
             s_up = 0.0;
             s_down = 0.0;
-            //#pragma omp parallel for default(none) shared(m,n,a2,h_s,r_s,h2,k2,s_up,s_down)
+            #pragma omp parallel for default(none) shared(m,n,a2,h_s,r_s,h2,k2,s_up,s_down)
             for(int j = 1;j<m;j++){
                 double temp ; // Вспомогательная переменная = A h_s
                 for(int i = 1;i<n;i++){
@@ -249,8 +262,9 @@ int main() {
         }
 
             // Пересчитываем значение h_s
-        #pragma omp parallel for default(none) shared(m,n,h_s,beta,r_s)
+        //#pragma omp parallel for default(none) shared(m,n,h_s,beta,r_s)
         for(int j = 0;j<=m;j++){
+        //#pragma  omp parallel for default(none) shared(n,h_s,j,beta,r_s)
             for(int i = 0;i<=n;i++){
                 h_s[i][j] = beta * h_s[i][j] - r_s[i][j];
             }
@@ -258,7 +272,7 @@ int main() {
 
         s_up = 0.0;
         s_down = 0.0;
-        #pragma omp parallel for default(none) shared(m,n,s_up,h_s,r_s,s_down,a2,h2,k2)
+        //#pragma omp parallel for default(none) shared(m,n,s_up,h_s,r_s,s_down,a2,h2,k2)
         for(int j = 1;j<m;j++)
             for(int i = 1;i<n;i++){
                 s_up += h_s[i][j] * r_s[i][j];
@@ -311,12 +325,13 @@ int main() {
         }
 
     }
-
+    auto stop = high_resolution_clock::now(); // Для замера времени
+    auto duration = duration_cast<milliseconds>(stop - start);
 
     cout << "Проведено "<<S<<" итераций"<<endl;
     cout << "Достигнута точность eps = " << epsMax <<endl;
     cout << "Достигнута норма невязки "<<current_norm<<endl;
     cout << str << endl;
-
+    cout << "Время просчёта "<<duration.count() << " мс"<<endl;
     return 0;
 }
