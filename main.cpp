@@ -1,3 +1,4 @@
+#include "boost/multiprecision/cpp_dec_float.hpp"
 #include <iostream>
 #include <cmath>
 #include <vector>
@@ -98,20 +99,20 @@ int main() {
     // Применение метода сопряжённых градиентов к решению
     // Задачи Дирихле для уравнения Пуассона
 
-    int n = 290; // Число разбиений по оси x
-    int m = 290; // Число разбиений по оси y
+    int n = 800; // Число разбиений по оси x
+    int m = 801; // Число разбиений по оси y
 
 
     double h = (b-a)/n; // Шаг по оси x
     double k = (d-c)/m; // Шаг по оси y
 
     //double laplacian[n+1][m+1]; // Кэширование лапласиана
-
-    double v[n+1][m+1]; // Текущее состояние
-    // Взять вместо них векторы, чтобы ДИНАМИЧЕСКИ формировалась память
-    // Тогда оно разрешит жрать больше
-    double h_s[n+1][m+1]; // Текущий вектор сопряжённого направления
-    double r_s[n+1][m+1]; // Текущая невязка
+    vector<vector<double>> v,h_s,r_s;
+//    double v[n+1][m+1]; // Текущее состояние
+//    // Взять вместо них векторы, чтобы ДИНАМИЧЕСКИ формировалась память
+//    // Тогда оно разрешит жрать больше
+//    double h_s[n+1][m+1]; // Текущий вектор сопряжённого направления
+//    double r_s[n+1][m+1]; // Текущая невязка
 
     //double real_sol[n+1][m+1]; // Точное решение
 
@@ -121,9 +122,9 @@ int main() {
     string str = ""; // Сообщение при окончании работы
 
     int S = 0; // Количество итераций метода
-    int Nmax = 5000; // Максимальное число итераций
+    int Nmax = 7000; // Максимальное число итераций
 
-    double eps = 0.000005; // Требуемая точность для основной/тестовой задачи
+    double eps = 0.0000005; // Требуемая точность для основной/тестовой задачи
 
     bool test = true; // Является ли задача основной/тестовой
 
@@ -153,16 +154,30 @@ int main() {
         y[j] = c + j*k;
         //y[j] = y[j-1] + k;
     // Заполнение
-    for(int j = 0;j<=m;j++){
-        #pragma omp parallel for default(none) shared(n,v,j,h_s,r_s,x,y,m,test)
-        for(int i = 0;i<=n;i++){
-            v[i][j] = 0;
-            h_s[i][j] = 0;
-            r_s[i][j] = 0;
-            //real_sol[i][j] = u_test(x[i],y[j]);
-            //laplacian[i][j] = f_test(x[i],y[j]);
-        }
+    vector<double> vec;
+    vec.reserve(m+1);
+
+    #pragma omp parallel for default(none) shared(m,vec)
+    for(int t = 0;t<=m;t++){
+        vec.push_back(0);
     }
+
+//#pragma omp parallel for default(none) shared(n,vec,v,h_s,r_s)
+    for (int i = 0; i <= n; ++i) {
+        v.push_back(vec);
+        h_s.push_back(vec);
+        r_s.push_back(vec);
+    }
+//    for(int j = 0;j<=m;j++){
+//        #pragma omp parallel for default(none) shared(n,v,j,h_s,r_s,x,y,m,test)
+//        for(int i = 0;i<=n;i++){
+//            v[i][j] = 0;
+//            h_s[i][j] = 0;
+//            r_s[i][j] = 0;
+//            //real_sol[i][j] = u_test(x[i],y[j]);
+//            //laplacian[i][j] = f_test(x[i],y[j]);
+//        }
+//    }
 
     // Учёт гран условий
     #pragma omp parallel for default(none) shared(m,n,v,x,y,test)
@@ -321,7 +336,8 @@ int main() {
 
 // Update shared epsMax after all calculations are done
         epsMax = local_epsMax;
-        //cout << "beta на "<< S<<"-й итерации = "<<beta << " Текущая точность "<<epsMax<< " Норма невязки = "<<current_norm<<endl;
+        if(S%200 == 0)
+            cout << "beta на "<< S<<"-й итерации = "<<beta << " Текущая точность "<<epsMax<< " Норма невязки = "<<current_norm<<endl;
 
         // Из-за вычислительной погрешности метод приходится перезапускать
 
@@ -332,8 +348,8 @@ int main() {
 
             cout << "Текущая точность "<<epsMax<<endl;
         }
-
-        if((epsMax < eps)||((epsMax>prev_eps)&&(S>10))){
+        //if((epsMax < eps)||((S>4901)&&(epsMax>prev_eps)))
+        if((epsMax < eps)||((S>5601)&&(epsMax>prev_eps))){
             cout << "Норма невязки = "<<current_norm<<endl;
 //            cout << "Посчитанное решение"<<" на "<<S<<"-той итерации"<<": \n";
 //            for(int j = 0;j<=m;j++){
