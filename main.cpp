@@ -3,7 +3,7 @@
 #include <vector>
 # define M_PI           3.14159265358979323846
 #include <chrono>
-//#include <queue>
+#include <queue>
 using namespace std::chrono;
 using namespace std;
 
@@ -29,14 +29,14 @@ double mu1_main(double y){
     return sin(M_PI * y);
 }
 double mu2_main(double y){
-    return mu1_main(y);
+    return sin(M_PI * y);
 }
 double mu3_main(double x){
     return x-x*x;
 }
 double mu4_main(double x){
 
-    return mu3_main(x);
+    return x-x*x;
 }
 // Функция u для тестовой задачи
 // u* = exp(sin^2(pi * x * y))
@@ -45,7 +45,7 @@ double u_test(double x, double y){
 }
 // Функция f для тестовой задачи
 double f_test(double x, double y){
-    return -0.5 * u_test(x,y) * M_PI * M_PI * (x * x + y * y) * (-1-4 * cos(2 * M_PI * x * y) + cos(4 * M_PI * x * y));
+    return 0.5 * u_test(x,y) * M_PI * M_PI * (x * x + y * y) * (-1-4 * cos(2 * M_PI * x * y) + cos(4 * M_PI * x * y));
 }
 
 // Тестовые гранусловия
@@ -98,26 +98,30 @@ int main() {
     // Применение метода сопряжённых градиентов к решению
     // Задачи Дирихле для уравнения Пуассона
 
-    int n = 100; // Число разбиений по оси x
-    int m = 100; // Число разбиений по оси y
+    int n = 290; // Число разбиений по оси x
+    int m = 290; // Число разбиений по оси y
 
 
     double h = (b-a)/n; // Шаг по оси x
     double k = (d-c)/m; // Шаг по оси y
 
+    //double laplacian[n+1][m+1]; // Кэширование лапласиана
+
     double v[n+1][m+1]; // Текущее состояние
+    // Взять вместо них векторы, чтобы ДИНАМИЧЕСКИ формировалась память
+    // Тогда оно разрешит жрать больше
     double h_s[n+1][m+1]; // Текущий вектор сопряжённого направления
     double r_s[n+1][m+1]; // Текущая невязка
 
-    double real_sol[n+1][m+1]; // Точное решение
+    //double real_sol[n+1][m+1]; // Точное решение
 
-    double laplacian[n+1][m+1]; // Кэширование лапласиана
+
 
 
     string str = ""; // Сообщение при окончании работы
 
     int S = 0; // Количество итераций метода
-    int Nmax = 100000; // Максимальное число итераций
+    int Nmax = 5000; // Максимальное число итераций
 
     double eps = 0.000005; // Требуемая точность для основной/тестовой задачи
 
@@ -150,15 +154,16 @@ int main() {
         //y[j] = y[j-1] + k;
     // Заполнение
     for(int j = 0;j<=m;j++){
-        #pragma omp parallel for default(none) shared(n,v,j,h_s,r_s,real_sol,laplacian,x,y)
+        #pragma omp parallel for default(none) shared(n,v,j,h_s,r_s,x,y,m,test)
         for(int i = 0;i<=n;i++){
             v[i][j] = 0;
             h_s[i][j] = 0;
             r_s[i][j] = 0;
-            real_sol[i][j] = u_test(x[i],y[j]);
-            laplacian[i][j] = f_test(x[i],y[j]);
+            //real_sol[i][j] = u_test(x[i],y[j]);
+            //laplacian[i][j] = f_test(x[i],y[j]);
         }
     }
+
     // Учёт гран условий
     #pragma omp parallel for default(none) shared(m,n,v,x,y,test)
     for(int j = 0;j<=m;j++)
@@ -168,7 +173,7 @@ int main() {
 
     double alpha ; // alpha(s)
     double beta = 0.0; // beta(s)
-    int system_size = (n-1)*(m-1); // Размерность системы
+    //int system_size = (n-1)*(m-1); // Размерность системы
 
     // Начинаем итерации метода сопр. градиентов
 
@@ -176,6 +181,8 @@ int main() {
     // Вспомогательные суммы
     double s_up = 0.0;
     double s_down = 0.0;
+
+    double prev_eps;
 
 //    cout << "Посчитанное решение"<<" на "<<S<<"-той итерации"<<": \n";
 //    for(int j = 0;j<=m;j++){
@@ -187,16 +194,20 @@ int main() {
 //    cout << endl << "Реальное решение: \n";
 //    for(int j = 0;j<=m;j++){
 //        for(int i = 0;i<=n;i++){
-//            cout << real_sol[i][j] << " ";
+//            cout << u_test(x[i],y[j]) << " ";
 //        }
 //        cout << endl;
 //    }
+
+
     cout << "\n-----------------------------------------"<<endl;
 
     auto start = high_resolution_clock::now(); // Для замера времени
+
+    bool alert_enabled = false; // beta слишком маленькая - > - > вычисл. погрешность
     while (true){
 
-        if(S>= min(Nmax,system_size)){
+        if(S>= Nmax){
             cout << "Текущая точность "<<epsMax<<endl;
             cout << "Норма невязки = "<<current_norm<<endl;
 //            cout << "Посчитанное решение"<<" на "<<S<<"-той итерации"<<": \n";
@@ -209,11 +220,12 @@ int main() {
 //            cout << endl << "Реальное решение: \n";
 //            for(int j = 0;j<=m;j++){
 //                for(int i = 0;i<=n;i++){
-//                    cout << real_sol[i][j] << " ";
+//                    cout << u_test(x[i],y[j]) << " ";
 //                }
 //                cout << endl;
 //            }
             cout << "\n-----------------------------------------"<<endl;
+
             str = "Выход по числу итераций!";
             break;
         }
@@ -224,55 +236,65 @@ int main() {
         // Начинаем с подсчёта текущей невязки
         // r_s = A x_s-F
 
-        // Идея: произведение v * h и v * k вычисляется два раза!
-        // Сохраним его значение при проходе
 
-        #pragma omp parallel for default(none) shared(m,n,r_s,a2,v,h2,k2,laplacian,current_norm)
+        #pragma omp parallel for default(none) shared(m,n,r_s,a2,v,h2,k2,x,y) reduction(max:current_norm)
         for(int i = 1;i<n;i++){
-            //double temp; // Вспомогательная сумма
-            double vert1,vert2;
-            //std::
             for(int j = 1;j<m;j++){
                 // Проходимся по вектору v
                 // Разреженность помогает!
-                
-                r_s[i][j] = -a2 * v[i][j]-h2*(v[i+1][j]+v[i-1][j])-k2*(v[i][j+1]+v[i][j-1])+ laplacian[i][j];
 
-                if(abs(r_s[i][j]) >current_norm)
-                    current_norm = abs(r_s[i][j]);
+                r_s[i][j] = -a2 * v[i][j]-h2*(v[i+1][j]+v[i-1][j])-k2*(v[i][j+1]+v[i][j-1])- f_test(x[i],y[j]);
+
+                current_norm = fmax(current_norm, fabs(r_s[i][j]));
             }
         }
 
 
         if(S>=1){
-            // Вспомогательные суммы
-            s_up = 0.0;
-            s_down = 0.0;
-            #pragma omp parallel for default(none) shared(m,n,a2,h_s,r_s,h2,k2,s_up,s_down)
-            for(int j = 1;j<m;j++){
-                double temp ; // Вспомогательная переменная = A h_s
-                for(int i = 1;i<n;i++){
-                    temp = -a2 * h_s[i][j]-h2*(h_s[i+1][j]+h_s[i-1][j])-k2*(h_s[i][j+1]+h_s[i][j-1]);
-                    s_up += temp * r_s[i][j];
-                    s_down += temp * h_s[i][j];
-                }
-            }
 
-            beta = s_up/s_down;
+                // Вспомогательные суммы
+                s_up = 0.0;
+                s_down = 0.0;
+                #pragma omp parallel for default(none) shared(m,n,a2,h_s,r_s,h2,k2,s_up,s_down)
+                for(int j = 1;j<m;j++){
+                    double temp ; // Вспомогательная переменная = A h_s
+                    for(int i = 1;i<n;i++){
+                        temp = -a2 * h_s[i][j]-h2*(h_s[i+1][j]+h_s[i-1][j])-k2*(h_s[i][j+1]+h_s[i][j-1]);
+                        s_up += temp * r_s[i][j];
+                        s_down += temp * h_s[i][j];
+                    }
+                }
+
+                beta = s_up/s_down;
+//                if((abs(beta) < 1e-10)&&(S!=0)&&(abs(beta)>0)){
+//
+//                    cout << "Alert! Производится перезапуск метода" << endl;
+//                    beta = 0;
+//                    for(int j = 0;j<=m;j++){
+//                        //#pragma omp parallel for default(none) shared(n,v,j,h_s,r_s,x,y,m,test)
+//                        for(int i = 0;i<=n;i++){
+//                            h_s[i][j] = 0;
+//                            //real_sol[i][j] = u_test(x[i],y[j]);
+//                            //laplacian[i][j] = f_test(x[i],y[j]);
+//                        }
+//                    }
+//                }
+
+
+
         }
 
             // Пересчитываем значение h_s
-        //#pragma omp parallel for default(none) shared(m,n,h_s,beta,r_s)
-        for(int j = 0;j<=m;j++){
-        //#pragma  omp parallel for default(none) shared(n,h_s,j,beta,r_s)
-            for(int i = 0;i<=n;i++){
+        #pragma omp parallel for default(none) shared(m,n,h_s,beta,r_s)
+        for(int j = 1;j<m;j++){
+            for(int i = 1;i<n;i++){
                 h_s[i][j] = beta * h_s[i][j] - r_s[i][j];
             }
         }
 
         s_up = 0.0;
         s_down = 0.0;
-        //#pragma omp parallel for default(none) shared(m,n,s_up,h_s,r_s,s_down,a2,h2,k2)
+        #pragma omp parallel for default(none) shared(m,n,h_s,r_s,a2,h2,k2) reduction(+:s_up,s_down)
         for(int j = 1;j<m;j++)
             for(int i = 1;i<n;i++){
                 s_up += h_s[i][j] * r_s[i][j];
@@ -280,20 +302,30 @@ int main() {
             }
         alpha = -s_up/s_down;
 
+        double local_epsMax = epsMax; // Thread-local variable
 
-        for(int j = 1;j<m;j++)
-            for(int i = 1;i<n;i++){
-                v_old = v[i][j];
-                v_new = v_old + alpha * h_s[i][j];
+#pragma omp parallel for default(none) shared(m, n, v, h_s, alpha, test, x,y) reduction(max:local_epsMax)
+        for(int j = 1; j < m; j++) {
+            for(int i = 1; i < n; i++) {
+                double v_old_local = v[i][j];
+                double v_new_local = v_old_local + alpha * h_s[i][j];
 
-                v[i][j] = v_new;
+                v[i][j] = v_new_local;
+
                 if(test)
-                    epsCur = abs(real_sol[i][j]-v_new);
+                    local_epsMax = fmax(local_epsMax, fabs(u_test(x[i],y[j]) - v_new_local));
                 else
-                    epsCur = abs(v_old-v_new);
-                if(epsCur > epsMax)
-                    epsMax = epsCur;
+                    local_epsMax = fmax(local_epsMax, fabs(v_old_local - v_new_local));
             }
+        }
+
+// Update shared epsMax after all calculations are done
+        epsMax = local_epsMax;
+        //cout << "beta на "<< S<<"-й итерации = "<<beta << " Текущая точность "<<epsMax<< " Норма невязки = "<<current_norm<<endl;
+
+        // Из-за вычислительной погрешности метод приходится перезапускать
+
+
         ++S;
 
         if(S==1 || S==2){
@@ -301,10 +333,27 @@ int main() {
             cout << "Текущая точность "<<epsMax<<endl;
         }
 
-        if(epsMax < eps){
+        if((epsMax < eps)||((epsMax>prev_eps)&&(S>10))){
+            cout << "Норма невязки = "<<current_norm<<endl;
+//            cout << "Посчитанное решение"<<" на "<<S<<"-той итерации"<<": \n";
+//            for(int j = 0;j<=m;j++){
+//                for(int i = 0;i<=n;i++){
+//                    cout << v[i][j] << " ";
+//                }
+//                cout << endl;
+//            }
+//            cout << endl << "Реальное решение: \n";
+//            for(int j = 0;j<=m;j++){
+//                for(int i = 0;i<=n;i++){
+//                    cout << u_test(x[i],y[j]) << " ";
+//                }
+//                cout << endl;
+//            }
+            cout << "\n-----------------------------------------"<<endl;
             str = "Выход по точности!";
             break;
         }
+        prev_eps = epsMax;
         if(S==1||S==2){
             cout << "Норма невязки = "<<current_norm<<endl;
 //            cout << "Посчитанное решение"<<" на "<<S<<"-той итерации"<<": \n";
@@ -317,7 +366,7 @@ int main() {
 //            cout << endl << "Реальное решение: \n";
 //            for(int j = 0;j<=m;j++){
 //                for(int i = 0;i<=n;i++){
-//                    cout << real_sol[i][j] << " ";
+//                    cout << u_test(x[i],y[j]) << " ";
 //                }
 //                cout << endl;
 //            }
@@ -329,7 +378,7 @@ int main() {
     auto duration = duration_cast<milliseconds>(stop - start);
 
     cout << "Проведено "<<S<<" итераций"<<endl;
-    cout << "Достигнута точность eps = " << epsMax <<endl;
+    cout << "Достигнута погрешность eps = " << epsMax <<endl;
     cout << "Достигнута норма невязки "<<current_norm<<endl;
     cout << str << endl;
     cout << "Время просчёта "<<duration.count() << " мс"<<endl;
